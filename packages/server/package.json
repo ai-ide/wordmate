@@ -1,0 +1,30 @@
+{
+  "name": "@wordmate/server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "lint": "eslint . --ext .ts --fix"
+  },
+  "dependencies": {
+    "koa": "^2.14.2",
+    "koa-router": "^12.0.0",
+    "koa-body": "^6.0.1",
+    "koa-cors": "^0.0.16",
+    "sqlite3": "^5.1.6",
+    "typeorm": "^0.3.17",
+    "reflect-metadata": "^0.1.13"
+  },
+  "devDependencies": {
+    "@types/koa": "^2.13.8",
+    "@types/koa-router": "^7.4.4",
+    "@types/node": "^20.4.9",
+    "@typescript-eslint/eslint-plugin": "^6.3.0",
+    "@typescript-eslint/parser": "^6.3.0",
+    "eslint": "^8.46.0",
+    "tsx": "^3.12.7",
+    "typescript": "^5.1.6"
+  }
+}
