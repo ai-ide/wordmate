@@ -1,0 +1,21 @@
+{
+  "name": "wordmate",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A full-stack TypeScript project with Vue and Koa",
+  "scripts": {
+    "dev": "concurrently \"pnpm dev:client\" \"pnpm dev:server\"",
+    "dev:client": "pnpm --filter @wordmate/client dev",
+    "dev:server": "pnpm --filter @wordmate/server dev",
+    "build:client": "pnpm --filter @wordmate/client build",
+    "build:server": "pnpm --filter @wordmate/server build",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
