@@ -1,23 +1,44 @@
 <template>
   <div class="word-search">
-    <h1>英语单词查询</h1>
-    <div class="search-box">
-      <input 
-        ref="inputRef"
-        v-model="searchWord" 
-        @keyup.enter="handleSearch()"
-        placeholder="请输入要查询的单词"
-        type="text"
-        :disabled="isLoading"
-      >
-      <button 
-        @click="handleSearch()"
-        :disabled="isLoading"
-        class="search-button"
-      >
-        <span v-if="isLoading" class="button-spinner"></span>
-        <span>{{ isLoading ? '查询中...' : '查询' }}</span>
-      </button>
+    <h1 class="app-title">
+      <span class="logo">📖</span>
+      <span class="title-text">
+        WordMate
+        <sup class="ai-badge">AI</sup>
+      </span>
+    </h1>
+    <p class="app-subtitle">Your Smart English Learning Companion</p>
+
+    <div class="search-container">
+      <div class="search-box">
+        <input 
+          ref="inputRef"
+          v-model="searchWord" 
+          @keyup.enter="handleSearch()"
+          placeholder="请输入要查询的单词"
+          type="text"
+          :disabled="isLoading"
+        >
+        <button 
+          @click="handleSearch()"
+          :disabled="isLoading"
+          class="search-button"
+        >
+          <span v-if="isLoading" class="button-spinner"></span>
+          <span>{{ isLoading ? '查询中...' : '查询' }}</span>
+        </button>
+      </div>
+
+      <div v-if="searchHistory.length" class="history-list">
+        <span 
+          v-for="word in sortedHistory" 
+          :key="word"
+          class="history-tag"
+        >
+          <span class="word-text" @click="handleHistoryClick(word)">{{ word }}</span>
+          <button class="delete-btn" @click.stop="removeFromHistory(word)" aria-label="删除">&times;</button>
+        </span>
+      </div>
     </div>
 
     <div v-if="error" class="error">
@@ -86,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 
 interface Example {
   en: string;
@@ -124,15 +145,80 @@ interface StreamData {
   content?: string;
 }
 
+interface HistoryItem {
+  word: string;
+  timestamp: number;
+}
+
 const searchWord = ref('')
 const wordInfo = ref<Partial<WordInfo> | null>(null)
 const error = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 const isLoading = ref(false)
 
+// 修改历史记录的数据结构
+const searchHistory = ref<HistoryItem[]>([])
+const MAX_HISTORY = 5
+
+// 修改计算属性，添加当前查询词过滤
+const sortedHistory = computed(() => {
+  return [...searchHistory.value]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .map(item => item.word)
+    .filter(word => word !== searchWord.value) // 过滤掉当前查询的单词
+})
+
 onMounted(() => {
   inputRef.value?.focus()
+  const savedHistory = localStorage.getItem('searchHistory')
+  if (savedHistory) {
+    searchHistory.value = JSON.parse(savedHistory)
+  }
 })
+
+function addToHistory(word: string) {
+  const index = searchHistory.value.findIndex(item => item.word === word)
+  if (index !== -1) {
+    searchHistory.value.splice(index, 1)
+  }
+  searchHistory.value.unshift({
+    word,
+    timestamp: Date.now()
+  })
+  
+  if (searchHistory.value.length > MAX_HISTORY) {
+    searchHistory.value.pop()
+  }
+  
+  saveHistory()
+}
+
+function removeFromHistory(word: string) {
+  const index = searchHistory.value.findIndex(item => item.word === word)
+  if (index !== -1) {
+    searchHistory.value.splice(index, 1)
+    saveHistory()
+  }
+}
+
+function saveHistory() {
+  localStorage.setItem('searchHistory', JSON.stringify(searchHistory.value))
+}
+
+function handleHistoryClick(word: string) {
+  const index = searchHistory.value.findIndex(item => item.word === word)
+  if (index !== -1) {
+    searchHistory.value.splice(index, 1)
+    searchHistory.value.unshift({
+      word,
+      timestamp: Date.now()
+    })
+    saveHistory()
+  }
+  
+  searchWord.value = word
+  handleSearch(word)
+}
 
 const handleStreamData = (data: StreamData) => {
   if (!wordInfo.value) {
@@ -226,6 +312,7 @@ const handleSearch = async (searchTerm?: string) => {
     }
 
     const decoder = new TextDecoder()
+    let hasReceivedData = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -242,9 +329,9 @@ const handleSearch = async (searchTerm?: string) => {
           
           try {
             console.log('收到原始数据:', content)
-            // 直接尝试解析内容
             const data = JSON.parse(content) as StreamData
             handleStreamData(data)
+            hasReceivedData = true
           } catch (e) {
             console.error('解析错误:', e, '原始数据:', content)
           }
@@ -255,6 +342,12 @@ const handleSearch = async (searchTerm?: string) => {
     if (!searchTerm) {
       searchWord.value = wordToSearch
     }
+
+    // 只有在成功接收到数据后才添加到历史记录
+    if (hasReceivedData) {
+      addToHistory(wordToSearch)
+    }
+
   } catch (err) {
     console.error('搜索错误:', err)
     error.value = err instanceof Error ? err.message : '查询失败'
@@ -274,47 +367,187 @@ const handleRelatedWordClick = (word: string) => {
 .word-search {
   max-width: 800px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 40px 20px;
+}
+
+.app-title {
+  color: #1976D2;
+  text-align: center;
+  font-size: 2.8em;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.logo {
+  font-size: 1.1em;
+  animation: float 3s ease-in-out infinite;
+  filter: saturate(1.2);
+  line-height: 1;
+}
+
+.title-text {
+  background: linear-gradient(120deg, #1976D2, #2196F3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+.ai-badge {
+  font-size: 0.4em;
+  background: linear-gradient(120deg, #FF4081, #E91E63);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: bold;
+  margin-left: 4px;
+  position: relative;
+  top: 4px;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0;
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.app-subtitle {
+  color: #666;
+  text-align: center;
+  font-size: 1.1em;
+  margin: 8px 0 32px;
+  font-weight: normal;
+  font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.2px;
+}
+
+.search-container {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  margin-bottom: 24px;
 }
 
 .search-box {
   display: flex;
-  gap: 10px;
-  margin: 20px 0;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 12px 16px;
   font-size: 16px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  transition: all 0.3s ease;
 }
 
-button {
-  padding: 8px 20px;
-  background-color: #4CAF50;
+input:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.search-button {
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background-color: #1976D2;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
 }
 
-button:hover {
-  background-color: #45a049;
+.search-button:hover:not(:disabled) {
+  background-color: #1565C0;
 }
 
-.error {
-  color: #ff4444;
-  margin: 10px 0;
+.search-button:disabled {
+  background-color: #90CAF9;
+  cursor: not-allowed;
+}
+
+.history-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px;
+}
+
+.history-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #F5F5F5;
+  border-radius: 16px;
+  border: 1px solid #E0E0E0;
+  transition: all 0.2s ease;
+}
+
+.word-text {
+  padding: 6px 12px;
+  cursor: pointer;
+  color: #1976D2;
+  font-size: 14px;
+}
+
+.delete-btn {
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  color: #999;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.delete-btn:hover {
+  background-color: #E0E0E0;
+  color: #666;
 }
 
 .word-info {
-  margin-top: 30px;
-  padding: 20px;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  background-color: #f9f9f9;
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  margin-top: 24px;
 }
 
 .phonetic {
@@ -335,11 +568,6 @@ button:hover {
   font-weight: bold;
   margin-right: 10px;
   text-transform: capitalize;
-}
-
-h1 {
-  color: #333;
-  text-align: center;
 }
 
 h2 {
@@ -432,27 +660,6 @@ h3, h4 {
   display: none;
 }
 
-.search-button {
-  position: relative;
-  min-width: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 20px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.search-button:disabled {
-  background-color: #9e9e9e;
-  cursor: not-allowed;
-}
-
 .button-spinner {
   display: inline-block;
   width: 16px;
@@ -468,11 +675,6 @@ h3, h4 {
   100% { transform: rotate(360deg); }
 }
 
-input:disabled {
-  background-color: #f5f5f5;
-  cursor: not-allowed;
-}
-
 .fade-in {
   animation: fadeIn 0.5s ease-in;
 }
@@ -485,6 +687,46 @@ input:disabled {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+.error {
+  color: #ff4444;
+  margin: 10px 0;
+}
+
+@media (max-width: 600px) {
+  .word-search {
+    padding: 20px 16px;
+  }
+
+  .app-title {
+    font-size: 2em;
+  }
+
+  .search-container {
+    padding: 16px;
+  }
+
+  .search-box {
+    flex-direction: column;
+  }
+
+  .search-button {
+    width: 100%;
+  }
+
+  .word-info {
+    padding: 20px;
+  }
+
+  .logo {
+    font-size: 0.9em;
+  }
+
+  .ai-badge {
+    font-size: 0.35em;
+    top: 2px;
   }
 }
 </style> 
