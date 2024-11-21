@@ -47,7 +47,17 @@
 
     <div v-if="wordInfo" class="word-info">
       <div class="word-header" v-if="wordInfo.word">
-        <h2>{{ wordInfo.word }}</h2>
+        <div class="word-title">
+          <h2>{{ wordInfo.word }}</h2>
+          <button 
+            class="favorite-btn"
+            :class="{ 'is-favorite': isFavorite }"
+            @click="toggleFavorite"
+            :title="isFavorite ? '从生词本移除' : '添加到生词本'"
+          >
+            {{ isFavorite ? '★' : '☆' }}
+          </button>
+        </div>
         <div v-if="wordInfo.phonetic" class="phonetic">
           <span class="fade-in">/{{ wordInfo.phonetic }}/</span>
           <audio v-if="wordInfo.audioUrl" :src="wordInfo.audioUrl" controls class="audio-player fade-in"></audio>
@@ -103,6 +113,13 @@
         </div>
       </div>
     </div>
+
+    <div class="nav-links">
+      <router-link to="/wordbook" class="wordbook-link">
+        <span class="link-icon">📚</span>
+        生词本
+      </router-link>
+    </div>
   </div>
 </template>
 
@@ -150,6 +167,11 @@ interface HistoryItem {
   timestamp: number;
 }
 
+interface FavoriteWord {
+  word: string;
+  timestamp: number;
+}
+
 const searchWord = ref('')
 const wordInfo = ref<Partial<WordInfo> | null>(null)
 const error = ref('')
@@ -159,6 +181,12 @@ const isLoading = ref(false)
 // 修改历史记录的数据结构
 const searchHistory = ref<HistoryItem[]>([])
 const MAX_HISTORY = 5
+
+// 添加收藏相关的状态
+const favoriteWords = ref<FavoriteWord[]>([])
+const isFavorite = computed(() => {
+  return favoriteWords.value.some(item => item.word === wordInfo.value?.word)
+})
 
 // 修改计算属性，添加当前查询词过滤
 const sortedHistory = computed(() => {
@@ -170,9 +198,25 @@ const sortedHistory = computed(() => {
 
 onMounted(() => {
   inputRef.value?.focus()
+  
+  // 加载历史记录
   const savedHistory = localStorage.getItem('searchHistory')
   if (savedHistory) {
     searchHistory.value = JSON.parse(savedHistory)
+  }
+  
+  // 加载收藏
+  const savedFavorites = localStorage.getItem('favoriteWords')
+  if (savedFavorites) {
+    favoriteWords.value = JSON.parse(savedFavorites)
+  }
+
+  // 处理 URL 查询参数
+  const urlParams = new URLSearchParams(window.location.search)
+  const wordParam = urlParams.get('word')
+  if (wordParam) {
+    searchWord.value = wordParam
+    handleSearch(wordParam)
   }
 })
 
@@ -360,6 +404,30 @@ const handleSearch = async (searchTerm?: string) => {
 const handleRelatedWordClick = (word: string) => {
   searchWord.value = word
   handleSearch(word)
+}
+
+function saveFavorites() {
+  localStorage.setItem('favoriteWords', JSON.stringify(favoriteWords.value))
+}
+
+function toggleFavorite() {
+  if (!wordInfo.value?.word) return
+
+  const word = wordInfo.value.word
+  const index = favoriteWords.value.findIndex(item => item.word === word)
+
+  if (index === -1) {
+    // 添加到收藏
+    favoriteWords.value.unshift({
+      word,
+      timestamp: Date.now()
+    })
+  } else {
+    // 从收藏中移除
+    favoriteWords.value.splice(index, 1)
+  }
+
+  saveFavorites()
 }
 </script>
 
@@ -695,6 +763,64 @@ h3, h4 {
   margin: 10px 0;
 }
 
+.word-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.favorite-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #bbb;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: all 0.3s ease;
+  border-radius: 50%;
+  margin-left: -4px;
+}
+
+.favorite-btn:hover {
+  color: #FFB300;
+  background-color: rgba(255, 179, 0, 0.1);
+}
+
+.favorite-btn.is-favorite {
+  color: #FFB300;
+  text-shadow: 0 0 8px rgba(255, 179, 0, 0.3);
+}
+
+.nav-links {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+}
+
+.wordbook-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: white;
+  border-radius: 20px;
+  text-decoration: none;
+  color: #1976D2;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.wordbook-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.link-icon {
+  font-size: 16px;
+}
+
 @media (max-width: 600px) {
   .word-search {
     padding: 20px 16px;
@@ -727,6 +853,11 @@ h3, h4 {
   .ai-badge {
     font-size: 0.35em;
     top: 2px;
+  }
+
+  .nav-links {
+    top: 10px;
+    right: 10px;
   }
 }
 </style> 
