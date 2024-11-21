@@ -21,8 +21,18 @@ export interface WordInfo {
 }
 
 export interface ZhipuAIResponse {
+  id: string;
+  created: number;
+  model: string;
   choices: Array<{
-    message: {
+    index: number;
+    finish_reason: string;
+    delta?: {
+      role?: string;
+      content?: string;
+    };
+    message?: {
+      role: string;
       content: string;
     };
   }>;

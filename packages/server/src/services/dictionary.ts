@@ -47,4 +47,38 @@ export async function queryWord(word: string) {
   });
 
   return response;
+}
+
+export async function suggestWords(word: string) {
+  const prompt = `请为英语单词"${word}"提供最多5个单词联想建议。
+要求：
+1. 只返回一个 JSON 数组，包含单词字符串
+2. 所有建议的单词必须以"${word}"开头
+3. 按照使用频率从高到低排序
+4. 如果找不到足够的单词，返回更少的结果也可以
+5. 建议的单词必须是真实存在的英语单词
+6. 响应必须简短迅速`;
+
+  const response = await fetch(ZHIPUAI_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': API_KEY
+    },
+    body: JSON.stringify({
+      model: "glm-4-flash",
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.1,
+      top_p: 0.5,
+      stream: false,
+      max_tokens: 50
+    })
+  });
+
+  return response;
 } 

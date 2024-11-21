@@ -11,21 +11,41 @@
 
     <div class="search-container">
       <div class="search-box">
-        <input 
-          ref="inputRef"
-          v-model="searchWord" 
-          @keyup.enter="handleSearch()"
-          placeholder="请输入要查询的单词"
-          type="text"
-          :disabled="isLoading"
-        >
+        <div class="input-wrapper">
+          <input 
+            ref="inputRef"
+            v-model="searchWord" 
+            @keyup.enter="handleEnter"
+            @input="handleInput"
+            @keydown.down.prevent="handleKeyDown"
+            @keydown.up.prevent="handleKeyUp"
+            @keydown.esc="handleEsc"
+            @blur="handleBlur"
+            placeholder="请输入要查询的单词"
+            type="text"
+            :disabled="isLoading"
+            autocomplete="off"
+          >
+          <div v-if="suggestions.length && showSuggestions" class="suggestions">
+            <div 
+              v-for="(suggestion, index) in suggestions" 
+              :key="suggestion"
+              class="suggestion-item"
+              :class="{ active: index === activeSuggestionIndex }"
+              @mousedown.prevent="handleSuggestionClick(suggestion)"
+              @mouseover="activeSuggestionIndex = index"
+            >
+              {{ suggestion }}
+            </div>
+          </div>
+        </div>
         <button 
-          @click="handleSearch()"
-          :disabled="isLoading"
+          @click="isLoading ? abortSearch() : handleSearch()"
+          :class="{ 'is-loading': isLoading }"
           class="search-button"
         >
           <span v-if="isLoading" class="button-spinner"></span>
-          <span>{{ isLoading ? '查询中...' : '查询' }}</span>
+          <span>{{ isLoading ? '取消' : '查询' }}</span>
         </button>
       </div>
 
@@ -196,6 +216,68 @@ const sortedHistory = computed(() => {
     .filter(word => word !== searchWord.value) // 过滤掉当前查询的单词
 })
 
+const suggestions = ref<string[]>([])
+const showSuggestions = ref(false)
+const activeSuggestionIndex = ref(-1)
+let suggestionsDebounceTimer: number | null = null
+
+const abortController = ref<AbortController | null>(null)
+
+async function fetchSuggestions(word: string) {
+  if (word.length < 2) {
+    suggestions.value = []
+    return
+  }
+
+  try {
+    const response = await fetch(`/api/suggestions?word=${encodeURIComponent(word)}`)
+    if (response.ok) {
+      suggestions.value = await response.json()
+    }
+  } catch (e) {
+    console.error('获取建议失败:', e)
+    suggestions.value = []
+  }
+}
+
+function handleInput() {
+  showSuggestions.value = true
+  activeSuggestionIndex.value = -1
+  
+  if (suggestionsDebounceTimer) {
+    clearTimeout(suggestionsDebounceTimer)
+  }
+  
+  suggestionsDebounceTimer = window.setTimeout(() => {
+    fetchSuggestions(searchWord.value)
+  }, 300)
+}
+
+function handleKeyDown() {
+  if (!suggestions.value.length) return
+  activeSuggestionIndex.value = (activeSuggestionIndex.value + 1) % suggestions.value.length
+}
+
+function handleKeyUp() {
+  if (!suggestions.value.length) return
+  activeSuggestionIndex.value = activeSuggestionIndex.value <= 0 
+    ? suggestions.value.length - 1 
+    : activeSuggestionIndex.value - 1
+}
+
+function handleSuggestionClick(word: string) {
+  searchWord.value = word
+  showSuggestions.value = false
+  handleSearch(word)
+}
+
+function handleBlur() {
+  // 使用 setTimeout 确保点击建议项的事件能够先触发
+  setTimeout(() => {
+    showSuggestions.value = false
+  }, 200)
+}
+
 onMounted(() => {
   inputRef.value?.focus()
   
@@ -336,16 +418,62 @@ const handleStreamData = (data: StreamData) => {
   }
 }
 
+// 修改回车处理函数
+function handleEnter() {
+  if (activeSuggestionIndex.value >= 0 && suggestions.value.length > 0) {
+    // 如果有选中的建议词，使用建议词
+    const selectedWord = suggestions.value[activeSuggestionIndex.value]
+    searchWord.value = selectedWord
+    showSuggestions.value = false
+    handleSearch(selectedWord)
+  } else {
+    // 否则直接搜索当前输入
+    handleSearch()
+  }
+}
+
+// 添加 ESC 处理函数
+function handleEsc() {
+  if (showSuggestions.value) {
+    showSuggestions.value = false
+  } else if (isLoading.value) {
+    abortSearch()
+  }
+}
+
+// 添加中断搜索函数
+function abortSearch() {
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
+    isLoading.value = false
+  }
+}
+
+// 修改搜索函数
 const handleSearch = async (searchTerm?: string) => {
   const wordToSearch = searchTerm || searchWord.value.trim()
   if (!wordToSearch) return
+  
+  // 如果有在进行的搜索，先中断它
+  if (abortController.value) {
+    abortController.value.abort()
+  }
   
   try {
     error.value = ''
     wordInfo.value = null
     isLoading.value = true
+    showSuggestions.value = false
+    
+    // 创建新的 AbortController
+    abortController.value = new AbortController()
 
-    const response = await fetch(`/api/dictionary/${encodeURIComponent(wordToSearch)}`)
+    const response = await fetch(
+      `/api/dictionary/${encodeURIComponent(wordToSearch)}`,
+      { signal: abortController.value.signal }
+    )
+    
     if (!response.ok) {
       throw new Error('单词未找到')
     }
@@ -393,11 +521,16 @@ const handleSearch = async (searchTerm?: string) => {
     }
 
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.log('搜索被取消')
+      return
+    }
     console.error('搜索错误:', err)
     error.value = err instanceof Error ? err.message : '查询失败'
     wordInfo.value = null
   } finally {
     isLoading.value = false
+    abortController.value = null
   }
 }
 
@@ -511,21 +644,61 @@ function toggleFavorite() {
   padding: 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
   margin-bottom: 24px;
+  width: 100%;
 }
 
 .search-box {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 16px;
+  width: 100%;
+  position: relative;
+  align-items: center;
+}
+
+.input-wrapper {
+  position: relative;
+  flex: 0 1 auto;
+  width: calc(100% - 136px);
+  min-width: 0;
+}
+
+.suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 100%;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1001;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.suggestion-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.suggestion-item:hover,
+.suggestion-item.active {
+  background-color: #f5f5f5;
+  color: #1976D2;
 }
 
 input {
-  flex: 1;
-  padding: 12px 16px;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
   font-size: 16px;
   border: 2px solid #e0e0e0;
   border-radius: 8px;
   transition: all 0.3s ease;
+  background-color: #fff;
+  line-height: 44px;
 }
 
 input:focus {
@@ -540,23 +713,29 @@ input:disabled {
 }
 
 .search-button {
-  min-width: 120px;
-  display: flex;
+  position: relative;
+  z-index: 1000;
+  width: 120px;
+  height: 44px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 24px;
-  background-color: #1976D2;
+  padding: 0;
+  background-color: v-bind('isLoading ? "#ff4444" : "#1976D2"');
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
   transition: all 0.3s ease;
+  flex: 0 0 auto;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .search-button:hover:not(:disabled) {
-  background-color: #1565C0;
+  background-color: v-bind('isLoading ? "#ff6666" : "#1565C0"');
 }
 
 .search-button:disabled {
@@ -836,6 +1015,11 @@ h3, h4 {
 
   .search-box {
     flex-direction: column;
+    gap: 12px;
+  }
+
+  .input-wrapper {
+    width: 100%;
   }
 
   .search-button {
@@ -858,6 +1042,19 @@ h3, h4 {
   .nav-links {
     top: 10px;
     right: 10px;
+  }
+
+  .search-box {
+    flex-direction: column;
+  }
+
+  .suggestions {
+    position: absolute;
+    width: 100%;
+  }
+
+  .search-button {
+    margin-top: 8px;
   }
 }
 </style> 
