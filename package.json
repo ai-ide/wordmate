@@ -3,9 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
+    "dev": "concurrently -c \"blue.bold,green.bold\" -p \"[{name}]\" -n \"server,client\" \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:client": "pnpm -F @wordmate/client dev",
+    "dev:server": "pnpm -F @wordmate/server dev",
     "build": "pnpm -r build",
+    "build:client": "pnpm -F @wordmate/client build",
+    "build:server": "pnpm -F @wordmate/server build",
     "lint": "pnpm -r lint",
-    "format": "pnpm -r format"
+    "lint:client": "pnpm -F @wordmate/client lint",
+    "lint:server": "pnpm -F @wordmate/server lint",
+    "format": "pnpm -r format",
+    "format:client": "pnpm -F @wordmate/client format",
+    "format:server": "pnpm -F @wordmate/server format"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }
